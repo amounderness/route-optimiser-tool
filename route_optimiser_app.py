@@ -102,9 +102,12 @@ if use_pairs == "Yes" and 'canvassers' in st.session_state:
     num_pairs = st.number_input("How many pairs do you want to create?", min_value=1, max_value=len(canvasser_names)//2, step=1)
     st.markdown("Organise your canvassers into pairs. List names for each pair:")
 
+    used_names = set()
     for i in range(num_pairs):
         pair_name = f"Pair {i+1}"
-        pair_members = st.multiselect(f"{pair_name} Members", options=canvasser_names, key=f"pair_{i+1}")
+        available_names = [n for n in canvasser_names if n not in used_names]
+        pair_members = st.multiselect(f"{pair_name} Members", options=available_names, key=f"pair_{i+1}")
+        used_names.update(pair_members)
         pairings[pair_name] = pair_members
 
     st.session_state['pairs'] = pairings
@@ -135,22 +138,27 @@ if 'route_data' in st.session_state and 'canvassers' in st.session_state:
     df_processed = st.session_state['route_data']
     canvassers = st.session_state['canvassers']
 
-    # Build a list of all individuals (from pairs or solo)
-    all_assignees = []
+    # Build a list of all individuals (from pairs and leftover individuals)
+    all_assignees = set(c['Name'] for c in canvassers)
+    assigned_names = set()
+
+    if use_pairs == "Yes" and 'pairs' in st.session_state:
+        for members in st.session_state['pairs'].values():
+            assigned_names.update(members)
+    unpaired = list(all_assignees - assigned_names)
+
+    flat_pair_members = []
     if use_pairs == "Yes" and 'pairs' in st.session_state:
         for pair_name, members in st.session_state['pairs'].items():
-            if len(members) == 2:
-                all_assignees.extend(members)
-            else:
-                all_assignees.extend(members)  # one-person pairs
-    else:
-        all_assignees = [c['Name'] for c in canvassers]
+            flat_pair_members.extend(members)
 
-    # Assign route chunks evenly to canvassers (using mod)
+    all_individuals = flat_pair_members + unpaired
+
+    # Assign route chunks evenly
     chunks = df_processed['Route Chunk'].unique().tolist()
     chunk_to_canvasser = {}
     for i, chunk in enumerate(chunks):
-        canvasser = all_assignees[i % len(all_assignees)]
+        canvasser = all_individuals[i % len(all_individuals)]
         chunk_to_canvasser[chunk] = canvasser
 
     # Fill name and email based on assignment
@@ -169,8 +177,18 @@ if 'route_data' in st.session_state and 'canvassers' in st.session_state:
 
     # Summary Table
     st.markdown("### 📊 Assignment Summary")
-    summary_table = df_processed.groupby('Canvasser Name').size().reset_index(name='Total Homes')
-    st.dataframe(summary_table)
+    summary = df_processed.groupby('Canvasser Name').agg({
+        'Address': 'count',
+        'Route Chunk': pd.Series.nunique
+    }).reset_index().rename(columns={'Address': 'Total Homes', 'Route Chunk': 'Route Chunks'})
+    st.dataframe(summary)
+
+    st.download_button(
+        label="📥 Download Assignment Summary",
+        data=summary.to_csv(index=False).encode('utf-8'),
+        file_name="Assignment_Summary.csv",
+        mime="text/csv"
+    )
 
     st.markdown("### 📂 Final Output")
     st.dataframe(df_processed.head(20))
