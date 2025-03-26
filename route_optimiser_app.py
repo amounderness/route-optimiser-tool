@@ -55,42 +55,51 @@ Upload your electoral register CSV below. The app will:
 6. Export the result to CSV
 """)
 
+# -------------------------
+# Upload and Setup
+# -------------------------
 uploaded_file = st.file_uploader("Upload Electoral Register CSV", type=["csv"])
-
-if uploaded_file is not None:
+if uploaded_file:
     df = pd.read_csv(uploaded_file)
     if 'Street' not in df.columns or 'Address' not in df.columns:
         st.error("CSV must contain at least 'Street' and 'Address' columns.")
     else:
-        st.success("File uploaded successfully!")
-
         streets = sorted(df['Street'].dropna().unique().tolist())
-
         st.markdown("### 📜 Drag streets to set your walking route:")
         ordered_streets = sort_items(streets, direction="vertical")
 
-        canvassers = st.text_input("Enter canvasser names (comma-separated):", value="Keenan, Damien")
-        canvasser_list = [c.strip() for c in canvassers.split(',') if c.strip() != ""]
-
-        if st.button("🏋️ Generate Route Plan"):
+        if st.button("Generate Route Plan"):
             df_processed = assign_route_order(df.copy(), ordered_streets)
+            st.session_state['route_data'] = df_processed
+            st.session_state['assignments'] = {}  # Reset assignments if rerun
+            st.success("Route plan generated. Proceed to assignment below.")
 
-            # Show route chunks and allow assignment
-            unique_chunks = df_processed['Route Chunk'].unique()
-            st.markdown("### 🛋️ Assign Canvassers to Route Chunks")
-            chunk_assignments = {}
-            for chunk in unique_chunks:
-                selected = st.selectbox(f"Assign for {chunk}", options=["Unassigned"] + canvasser_list, key=chunk)
-                chunk_assignments[chunk] = selected
+# -------------------------
+# Assign Canvassers
+# -------------------------
+if 'route_data' in st.session_state:
+    df_processed = st.session_state['route_data']
 
-            df_processed['Canvasser'] = df_processed['Route Chunk'].map(chunk_assignments)
+    canvassers = st.text_input("Enter canvasser names (comma-separated):", value="Keenan, Damien")
+    canvasser_list = [c.strip() for c in canvassers.split(',') if c.strip() != ""]
 
-            st.success("Route plan generated with chunk-based assignments!")
-            st.dataframe(df_processed.head(20))
+    st.markdown("### 🛋️ Assign Canvassers to Route Chunks")
+    chunk_assignments = {}
+    for chunk in df_processed['Route Chunk'].unique():
+        key = f"assign_{chunk}"
+        default = st.session_state['assignments'].get(chunk, "Unassigned")
+        selected = st.selectbox(f"Assign for {chunk}", options=["Unassigned"] + canvasser_list, key=key, index=["Unassigned"] + canvasser_list.index(default) if default in canvasser_list else 0)
+        chunk_assignments[chunk] = selected
 
-            st.download_button(
-                label="📂 Download Final CSV",
-                data=df_processed.to_csv(index=False).encode('utf-8'),
-                file_name="Optimised_Route_Plan.csv",
-                mime="text/csv"
-            )
+    st.session_state['assignments'] = chunk_assignments
+    df_processed['Canvasser'] = df_processed['Route Chunk'].map(chunk_assignments)
+
+    st.markdown("### 📂 Final Output")
+    st.dataframe(df_processed.head(20))
+
+    st.download_button(
+        label="📂 Download Final CSV",
+        data=df_processed.to_csv(index=False).encode('utf-8'),
+        file_name="Optimised_Route_Plan.csv",
+        mime="text/csv"
+    )
