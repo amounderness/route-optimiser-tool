@@ -83,16 +83,15 @@ if 'route_data' in st.session_state:
     canvassers = st.text_input("Enter canvasser names (comma-separated):", value="Keenan, Damien")
     canvasser_list = [c.strip() for c in canvassers.split(',') if c.strip() != ""]
 
-    st.markdown("### 🛋️ Assign Canvassers to Route Chunks")
-chunk_assignments = {}
-for chunk in df_processed['Route Chunk'].unique():
-    key = f"assign_{chunk}"
-    default = st.session_state['assignments'].get(chunk, "Unassigned")
-    options = ["Unassigned"] + canvasser_list
-    default_index = options.index(default) if default in options else 0
-    selected = st.selectbox(f"Assign for {chunk}", options=options, key=key, index=default_index)
-    chunk_assignments[chunk] = selected
-
+    st.markdown("### 🏡 Assign Canvassers to Route Chunks")
+    chunk_assignments = {}
+    for chunk in df_processed['Route Chunk'].unique():
+        key = f"assign_{chunk}"
+        default = st.session_state['assignments'].get(chunk, "Unassigned")
+        options = ["Unassigned"] + canvasser_list
+        default_index = options.index(default) if default in options else 0
+        selected = st.selectbox(f"Assign for {chunk}", options=options, key=key, index=default_index)
+        chunk_assignments[chunk] = selected
 
     st.session_state['assignments'] = chunk_assignments
     df_processed['Canvasser'] = df_processed['Route Chunk'].map(chunk_assignments)
