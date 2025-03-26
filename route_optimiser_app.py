@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from streamlit_sortables import sort_items
 
 # -------------------------
 # Helper Functions
@@ -61,13 +62,11 @@ if uploaded_file is not None:
     else:
         st.success("File uploaded successfully!")
 
-        from streamlit_sortables import sort_items
+        streets = sorted(df['Street'].dropna().unique().tolist())
 
-streets = sorted(df['Street'].dropna().unique().tolist())
-
-# Drag-and-drop street ordering
-st.markdown("### 🗺️ Drag streets to set your walking route:")
-ordered_streets = sort_items(streets, direction="vertical")
+        # Drag-and-drop street ordering
+        st.markdown("### 📜 Drag streets to set your walking route:")
+        ordered_streets = sort_items(streets, direction="vertical")
 
         # Optionally assign canvassers
         assign_canv = st.checkbox("Split route among canvassers?")
