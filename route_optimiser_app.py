@@ -99,9 +99,12 @@ if 'route_data' in st.session_state:
     st.markdown("### 📂 Final Output")
     st.dataframe(df_processed.head(20))
 
-    st.download_button(
-        label="📂 Download Final CSV",
-        data=df_processed.to_csv(index=False).encode('utf-8'),
-        file_name="Optimised_Route_Plan.csv",
-        mime="text/csv"
-    )
+    if "Unassigned" in chunk_assignments.values():
+        st.warning("🚧 Please assign a canvasser to every route chunk before downloading.")
+    else:
+        st.download_button(
+            label="📂 Download Final CSV",
+            data=df_processed.to_csv(index=False).encode('utf-8'),
+            file_name="Optimised_Route_Plan.csv",
+            mime="text/csv"
+        )
