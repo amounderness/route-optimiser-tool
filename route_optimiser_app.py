@@ -57,7 +57,7 @@ Upload your electoral register CSV below. The app will:
 2. Let you define walking order
 3. Sort house numbers within each chunk
 4. Assign route numbers
-5. Allow assignment of canvassers (including optional pairing)
+5. Automatically assign canvassers (with optional pairing)
 6. Add necessary columns and export to CSV for Glide
 """)
 
@@ -96,18 +96,18 @@ else:
 st.markdown("### 👥 Step 2: Are your canvassers working in pairs?")
 use_pairs = st.radio("Pair up canvassers for shared routes?", ["No", "Yes"], horizontal=True)
 
+pairings = {}
 if use_pairs == "Yes" and 'canvassers' in st.session_state:
     canvasser_names = [c['Name'] for c in st.session_state['canvassers']]
     num_pairs = st.number_input("How many pairs do you want to create?", min_value=1, max_value=len(canvasser_names)//2, step=1)
     st.markdown("Organise your canvassers into pairs. List names for each pair:")
 
-    pairs = {}
     for i in range(num_pairs):
         pair_name = f"Pair {i+1}"
         pair_members = st.multiselect(f"{pair_name} Members", options=canvasser_names, key=f"pair_{i+1}")
-        pairs[pair_name] = pair_members
+        pairings[pair_name] = pair_members
 
-    st.session_state['pairs'] = pairs
+    st.session_state['pairs'] = pairings
 
 # -------------------------
 # Upload and Setup
@@ -126,52 +126,36 @@ if uploaded_file:
         if st.button("Generate Route Plan"):
             df_processed = assign_route_order(df.copy(), ordered_streets)
             st.session_state['route_data'] = df_processed
-            st.session_state['assignments'] = {}  # Reset assignments if rerun
-            st.success("Route plan generated. Proceed to assignment below.")
+            st.success("Route plan generated. Proceed to final output.")
 
 # -------------------------
-# Assign Canvassers
+# Automatic Assignment and Export
 # -------------------------
 if 'route_data' in st.session_state and 'canvassers' in st.session_state:
     df_processed = st.session_state['route_data']
+    canvassers = st.session_state['canvassers']
 
+    # Build a list of all individuals (from pairs or solo)
+    all_assignees = []
     if use_pairs == "Yes" and 'pairs' in st.session_state:
-        assignment_options = list(st.session_state['pairs'].keys())
-    else:
-        assignment_options = [c['Name'] for c in st.session_state['canvassers']]
-
-    st.markdown("### 🏡 Assign Canvassers or Pairs to Route Chunks")
-    chunk_assignments = {}
-    for chunk in df_processed['Route Chunk'].unique():
-        key = f"assign_{chunk}"
-        default = st.session_state['assignments'].get(chunk, "Unassigned")
-        options = ["Unassigned"] + assignment_options
-        default_index = options.index(default) if default in options else 0
-        selected = st.selectbox(f"Assign for {chunk}", options=options, key=key, index=default_index)
-        chunk_assignments[chunk] = selected
-
-    st.session_state['assignments'] = chunk_assignments
-
-    # Split chunks among individuals if assigned to pairs
-    final_names = []
-    final_emails = []
-    for i, row in df_processed.iterrows():
-        assignment = chunk_assignments.get(row['Route Chunk'], "Unassigned")
-        if use_pairs == "Yes" and assignment.startswith("Pair"):
-            pair_members = st.session_state['pairs'].get(assignment, [])
-            if pair_members:
-                selected_individual = pair_members[i % len(pair_members)]
-                final_names.append(selected_individual)
-                final_emails.append(get_email_by_name(selected_individual, st.session_state['canvassers']))
+        for pair_name, members in st.session_state['pairs'].items():
+            if len(members) == 2:
+                all_assignees.extend(members)
             else:
-                final_names.append("")
-                final_emails.append("")
-        else:
-            final_names.append(assignment if assignment != "Unassigned" else "")
-            final_emails.append(get_email_by_name(assignment, st.session_state['canvassers']))
+                all_assignees.extend(members)  # one-person pairs
+    else:
+        all_assignees = [c['Name'] for c in canvassers]
 
-    df_processed['Canvasser Name'] = final_names
-    df_processed['Canvasser Email'] = final_emails
+    # Assign route chunks evenly to canvassers (using mod)
+    chunks = df_processed['Route Chunk'].unique().tolist()
+    chunk_to_canvasser = {}
+    for i, chunk in enumerate(chunks):
+        canvasser = all_assignees[i % len(all_assignees)]
+        chunk_to_canvasser[chunk] = canvasser
+
+    # Fill name and email based on assignment
+    df_processed['Canvasser Name'] = df_processed['Route Chunk'].map(chunk_to_canvasser)
+    df_processed['Canvasser Email'] = df_processed['Canvasser Name'].apply(lambda name: get_email_by_name(name, canvassers))
 
     # Add Glide-compatible fields
     df_processed['Voter Intention'] = ""
@@ -183,15 +167,17 @@ if 'route_data' in st.session_state and 'canvassers' in st.session_state:
     output_columns = expected_cols + ['Route Chunk', 'Route Order', 'Canvasser Name', 'Canvasser Email', 'Voter Intention', 'Contacted?', 'Date Contacted', 'GOTV?', 'Notes']
     df_processed = df_processed[output_columns]
 
+    # Summary Table
+    st.markdown("### 📊 Assignment Summary")
+    summary_table = df_processed.groupby('Canvasser Name').size().reset_index(name='Total Homes')
+    st.dataframe(summary_table)
+
     st.markdown("### 📂 Final Output")
     st.dataframe(df_processed.head(20))
 
-    if "Unassigned" in chunk_assignments.values():
-        st.warning("🚧 Please assign a canvasser or pair to every route chunk before downloading.")
-    else:
-        st.download_button(
-            label="📂 Download Final CSV",
-            data=df_processed.to_csv(index=False).encode('utf-8'),
-            file_name="Optimised_Route_Plan.csv",
-            mime="text/csv"
-        )
+    st.download_button(
+        label="📂 Download Final CSV",
+        data=df_processed.to_csv(index=False).encode('utf-8'),
+        file_name="Optimised_Route_Plan.csv",
+        mime="text/csv"
+    )
