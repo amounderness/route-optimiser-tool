@@ -61,11 +61,13 @@ if uploaded_file is not None:
     else:
         st.success("File uploaded successfully!")
 
-        # Detect and reorder streets
-        streets = sorted(df['Street'].dropna().unique().tolist())
-        ordered_streets = st.multiselect("Select and order streets for walking route:",
-                                         streets,
-                                         default=streets)
+        from streamlit_sortables import sort_items
+
+streets = sorted(df['Street'].dropna().unique().tolist())
+
+# Drag-and-drop street ordering
+st.markdown("### 🗺️ Drag streets to set your walking route:")
+ordered_streets = sort_items(streets, direction="vertical")
 
         # Optionally assign canvassers
         assign_canv = st.checkbox("Split route among canvassers?")
