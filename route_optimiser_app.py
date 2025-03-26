@@ -39,6 +39,12 @@ def assign_route_order(df, ordered_streets):
     df['Route Order'] = df.index + 1
     return df
 
+def get_email_by_name(name, canvassers):
+    for person in canvassers:
+        if person['Name'] == name:
+            return person['Email']
+    return ""
+
 # -------------------------
 # Streamlit App UI
 # -------------------------
@@ -52,7 +58,7 @@ Upload your electoral register CSV below. The app will:
 3. Sort house numbers within each chunk
 4. Assign route numbers
 5. Allow assignment of canvassers to each route chunk
-6. Export the result to CSV
+6. Add necessary columns and export to CSV for Glide
 """)
 
 # -------------------------
@@ -90,8 +96,9 @@ else:
 uploaded_file = st.file_uploader("Upload Electoral Register CSV", type=["csv"])
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    if 'Street' not in df.columns or 'Address' not in df.columns:
-        st.error("CSV must contain at least 'Street' and 'Address' columns.")
+    expected_cols = ['Elector Number', 'Full Name', 'Address', 'Street', 'Postcode', 'Polling District', 'Ward Name', 'Constituency Name', 'Elector Type']
+    if not all(col in df.columns for col in expected_cols):
+        st.error("CSV must contain expected base columns for the electoral register.")
     else:
         streets = sorted(df['Street'].dropna().unique().tolist())
         st.markdown("### 📜 Drag streets to set your walking route:")
@@ -121,7 +128,21 @@ if 'route_data' in st.session_state and 'canvassers' in st.session_state:
         chunk_assignments[chunk] = selected
 
     st.session_state['assignments'] = chunk_assignments
-    df_processed['Canvasser'] = df_processed['Route Chunk'].map(chunk_assignments)
+
+    # Add new columns
+    df_processed['Canvasser Name'] = df_processed['Route Chunk'].map(chunk_assignments)
+    df_processed['Canvasser Email'] = df_processed['Canvasser Name'].apply(lambda name: get_email_by_name(name, st.session_state['canvassers']))
+
+    # Add Glide-compatible fields
+    df_processed['Voter Intention'] = ""
+    df_processed['Contacted?'] = ""
+    df_processed['Date Contacted'] = ""
+    df_processed['GOTV?'] = ""
+    df_processed['Notes'] = ""
+
+    # Reorder for clarity if desired
+    output_columns = expected_cols + ['Route Chunk', 'Route Order', 'Canvasser Name', 'Canvasser Email', 'Voter Intention', 'Contacted?', 'Date Contacted', 'GOTV?', 'Notes']
+    df_processed = df_processed[output_columns]
 
     st.markdown("### 📂 Final Output")
     st.dataframe(df_processed.head(20))
