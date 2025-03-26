@@ -64,11 +64,13 @@ uploaded_canvasser_file = st.file_uploader("Upload Canvasser CSV (with 'Name' an
 
 if uploaded_canvasser_file:
     canvasser_data = pd.read_csv(uploaded_canvasser_file)
-    if 'Name' in canvasser_data.columns and 'Email' in canvasser_data.columns:
+    canvasser_data.columns = canvasser_data.columns.str.strip().str.lower()
+    if 'name' in canvasser_data.columns and 'email' in canvasser_data.columns:
+        canvasser_data = canvasser_data.rename(columns={'name': 'Name', 'email': 'Email'})
         st.success("Canvasser data uploaded successfully!")
         st.session_state['canvassers'] = canvasser_data.to_dict(orient='records')
     else:
-        st.error("CSV must contain 'Name' and 'Email' columns.")
+        st.error("CSV must contain columns labelled 'Name' and 'Email' (case insensitive). Please check your file.")
 else:
     manual_names = st.text_area("Or enter names manually (comma-separated):", value="Keenan Clough, Damien Smith")
     manual_emails = st.text_area("Enter corresponding emails (comma-separated):", value="keenan@example.com, damien@example.com")
