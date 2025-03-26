@@ -56,6 +56,33 @@ Upload your electoral register CSV below. The app will:
 """)
 
 # -------------------------
+# Step 1: Upload Canvasser CSV or Enter Manually
+# -------------------------
+st.markdown("### 📂 Step 1: Upload or Enter Canvasser Details")
+canvasser_data = None
+uploaded_canvasser_file = st.file_uploader("Upload Canvasser CSV (with 'Name' and 'Email' columns)", type=["csv"], key="canvasser_upload")
+
+if uploaded_canvasser_file:
+    canvasser_data = pd.read_csv(uploaded_canvasser_file)
+    if 'Name' in canvasser_data.columns and 'Email' in canvasser_data.columns:
+        st.success("Canvasser data uploaded successfully!")
+        st.session_state['canvassers'] = canvasser_data.to_dict(orient='records')
+    else:
+        st.error("CSV must contain 'Name' and 'Email' columns.")
+else:
+    manual_names = st.text_area("Or enter names manually (comma-separated):", value="Keenan Clough, Damien Smith")
+    manual_emails = st.text_area("Enter corresponding emails (comma-separated):", value="keenan@example.com, damien@example.com")
+    if st.button("Save Manual Canvassers"):
+        names = [n.strip() for n in manual_names.split(',') if n.strip()]
+        emails = [e.strip() for e in manual_emails.split(',') if e.strip()]
+        if len(names) == len(emails):
+            canvasser_data = pd.DataFrame({'Name': names, 'Email': emails})
+            st.session_state['canvassers'] = canvasser_data.to_dict(orient='records')
+            st.success("Manual canvasser data saved!")
+        else:
+            st.error("Number of names and emails must match.")
+
+# -------------------------
 # Upload and Setup
 # -------------------------
 uploaded_file = st.file_uploader("Upload Electoral Register CSV", type=["csv"])
@@ -77,11 +104,9 @@ if uploaded_file:
 # -------------------------
 # Assign Canvassers
 # -------------------------
-if 'route_data' in st.session_state:
+if 'route_data' in st.session_state and 'canvassers' in st.session_state:
     df_processed = st.session_state['route_data']
-
-    canvassers = st.text_input("Enter canvasser names (comma-separated):", value="Keenan, Damien")
-    canvasser_list = [c.strip() for c in canvassers.split(',') if c.strip() != ""]
+    canvasser_list = [c['Name'] for c in st.session_state['canvassers']]
 
     st.markdown("### 🏡 Assign Canvassers to Route Chunks")
     chunk_assignments = {}
