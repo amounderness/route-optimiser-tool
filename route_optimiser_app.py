@@ -57,7 +57,7 @@ Upload your electoral register CSV below. The app will:
 2. Let you define walking order
 3. Sort house numbers within each chunk
 4. Assign route numbers
-5. Allow assignment of canvassers to each route chunk
+5. Allow assignment of canvassers (including optional pairing)
 6. Add necessary columns and export to CSV for Glide
 """)
 
@@ -91,6 +91,25 @@ else:
             st.error("Number of names and emails must match.")
 
 # -------------------------
+# Step 2: Optional Pairing Setup
+# -------------------------
+st.markdown("### 👥 Step 2: Are your canvassers working in pairs?")
+use_pairs = st.radio("Pair up canvassers for shared routes?", ["No", "Yes"], horizontal=True)
+
+if use_pairs == "Yes" and 'canvassers' in st.session_state:
+    canvasser_names = [c['Name'] for c in st.session_state['canvassers']]
+    num_pairs = st.number_input("How many pairs do you want to create?", min_value=1, max_value=len(canvasser_names)//2, step=1)
+    st.markdown("Organise your canvassers into pairs. List names for each pair:")
+
+    pairs = {}
+    for i in range(num_pairs):
+        pair_name = f"Pair {i+1}"
+        pair_members = st.multiselect(f"{pair_name} Members", options=canvasser_names, key=f"pair_{i+1}")
+        pairs[pair_name] = pair_members
+
+    st.session_state['pairs'] = pairs
+
+# -------------------------
 # Upload and Setup
 # -------------------------
 uploaded_file = st.file_uploader("Upload Electoral Register CSV", type=["csv"])
@@ -115,23 +134,44 @@ if uploaded_file:
 # -------------------------
 if 'route_data' in st.session_state and 'canvassers' in st.session_state:
     df_processed = st.session_state['route_data']
-    canvasser_list = [c['Name'] for c in st.session_state['canvassers']]
 
-    st.markdown("### 🏡 Assign Canvassers to Route Chunks")
+    if use_pairs == "Yes" and 'pairs' in st.session_state:
+        assignment_options = list(st.session_state['pairs'].keys())
+    else:
+        assignment_options = [c['Name'] for c in st.session_state['canvassers']]
+
+    st.markdown("### 🏡 Assign Canvassers or Pairs to Route Chunks")
     chunk_assignments = {}
     for chunk in df_processed['Route Chunk'].unique():
         key = f"assign_{chunk}"
         default = st.session_state['assignments'].get(chunk, "Unassigned")
-        options = ["Unassigned"] + canvasser_list
+        options = ["Unassigned"] + assignment_options
         default_index = options.index(default) if default in options else 0
         selected = st.selectbox(f"Assign for {chunk}", options=options, key=key, index=default_index)
         chunk_assignments[chunk] = selected
 
     st.session_state['assignments'] = chunk_assignments
 
-    # Add new columns
-    df_processed['Canvasser Name'] = df_processed['Route Chunk'].map(chunk_assignments)
-    df_processed['Canvasser Email'] = df_processed['Canvasser Name'].apply(lambda name: get_email_by_name(name, st.session_state['canvassers']))
+    # Split chunks among individuals if assigned to pairs
+    final_names = []
+    final_emails = []
+    for i, row in df_processed.iterrows():
+        assignment = chunk_assignments.get(row['Route Chunk'], "Unassigned")
+        if use_pairs == "Yes" and assignment.startswith("Pair"):
+            pair_members = st.session_state['pairs'].get(assignment, [])
+            if pair_members:
+                selected_individual = pair_members[i % len(pair_members)]
+                final_names.append(selected_individual)
+                final_emails.append(get_email_by_name(selected_individual, st.session_state['canvassers']))
+            else:
+                final_names.append("")
+                final_emails.append("")
+        else:
+            final_names.append(assignment if assignment != "Unassigned" else "")
+            final_emails.append(get_email_by_name(assignment, st.session_state['canvassers']))
+
+    df_processed['Canvasser Name'] = final_names
+    df_processed['Canvasser Email'] = final_emails
 
     # Add Glide-compatible fields
     df_processed['Voter Intention'] = ""
@@ -140,7 +180,6 @@ if 'route_data' in st.session_state and 'canvassers' in st.session_state:
     df_processed['GOTV?'] = ""
     df_processed['Notes'] = ""
 
-    # Reorder for clarity if desired
     output_columns = expected_cols + ['Route Chunk', 'Route Order', 'Canvasser Name', 'Canvasser Email', 'Voter Intention', 'Contacted?', 'Date Contacted', 'GOTV?', 'Notes']
     df_processed = df_processed[output_columns]
 
@@ -148,7 +187,7 @@ if 'route_data' in st.session_state and 'canvassers' in st.session_state:
     st.dataframe(df_processed.head(20))
 
     if "Unassigned" in chunk_assignments.values():
-        st.warning("🚧 Please assign a canvasser to every route chunk before downloading.")
+        st.warning("🚧 Please assign a canvasser or pair to every route chunk before downloading.")
     else:
         st.download_button(
             label="📂 Download Final CSV",
