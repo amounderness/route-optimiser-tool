@@ -45,6 +45,15 @@ def get_email_by_name(name, canvassers):
             return person['Email']
     return ""
 
+def translate_marker(marker):
+    translations = {
+        'G': 'EU citizen – local elections only',
+        'B': 'EU citizen (retained rights/qualifying) – local & PCC elections',
+        'L': 'Peer – local elections only',
+        'M': 'Qualifying foreign citizen – local elections only'
+    }
+    return translations.get(marker, 'Eligible for all local elections')
+
 # -------------------------
 # Streamlit App UI
 # -------------------------
@@ -118,10 +127,16 @@ if use_pairs == "Yes" and 'canvassers' in st.session_state:
 uploaded_file = st.file_uploader("Upload Electoral Register CSV", type=["csv"])
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    expected_cols = ['Elector Number', 'Full Name', 'Address', 'Street', 'Postcode', 'Polling District', 'Ward Name', 'Constituency Name', 'Elector Type']
+    expected_cols = ['Elector Number Prefix', 'Elector Number', 'Elector Number Suffix', 'Elector Markers', 'Name', 'Postcode', 'Address 1', 'Address 2', 'Address 3', 'Address 4']
     if not all(col in df.columns for col in expected_cols):
         st.error("CSV must contain expected base columns for the electoral register.")
     else:
+        df['Elector Marker Type'] = df['Elector Markers'].apply(translate_marker)
+        df = df.drop(columns=['Elector Markers'])
+
+        df['Street'] = df['Address 1'].apply(lambda x: x.split(',')[-1].strip() if ',' in x else x)
+        df['Address'] = df['Address 1']
+
         streets = sorted(df['Street'].dropna().unique().tolist())
         st.markdown("### 📜 Drag streets to set your walking route:")
         ordered_streets = sort_items(streets, direction="vertical")
@@ -138,7 +153,6 @@ if 'route_data' in st.session_state and 'canvassers' in st.session_state:
     df_processed = st.session_state['route_data']
     canvassers = st.session_state['canvassers']
 
-    # Build a list of all individuals (from pairs and leftover individuals)
     all_assignees = set(c['Name'] for c in canvassers)
     assigned_names = set()
 
@@ -154,28 +168,27 @@ if 'route_data' in st.session_state and 'canvassers' in st.session_state:
 
     all_individuals = flat_pair_members + unpaired
 
-    # Assign route chunks evenly
     chunks = df_processed['Route Chunk'].unique().tolist()
     chunk_to_canvasser = {}
     for i, chunk in enumerate(chunks):
         canvasser = all_individuals[i % len(all_individuals)]
         chunk_to_canvasser[chunk] = canvasser
 
-    # Fill name and email based on assignment
     df_processed['Canvasser Name'] = df_processed['Route Chunk'].map(chunk_to_canvasser)
     df_processed['Canvasser Email'] = df_processed['Canvasser Name'].apply(lambda name: get_email_by_name(name, canvassers))
 
-    # Add Glide-compatible fields
     df_processed['Voter Intention'] = ""
     df_processed['Contacted?'] = ""
     df_processed['Date Contacted'] = ""
     df_processed['GOTV?'] = ""
     df_processed['Notes'] = ""
 
-    output_columns = expected_cols + ['Route Chunk', 'Route Order', 'Canvasser Name', 'Canvasser Email', 'Voter Intention', 'Contacted?', 'Date Contacted', 'GOTV?', 'Notes']
+    output_columns = expected_cols.copy()
+    output_columns.remove('Elector Markers')
+    output_columns.append('Elector Marker Type')
+    output_columns += ['Route Chunk', 'Route Order', 'Canvasser Name', 'Canvasser Email', 'Voter Intention', 'Contacted?', 'Date Contacted', 'GOTV?', 'Notes']
     df_processed = df_processed[output_columns]
 
-    # Summary Table
     st.markdown("### 📊 Assignment Summary")
     summary = df_processed.groupby('Canvasser Name').agg({
         'Address': 'count',
